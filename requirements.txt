@@ -1,6 +1,5 @@
-telethon 
-python-telegram-bot==22.7
-qrcode
-pil
-crptg
-pillow
+aiohttp==3.9.0
+python-telegram-bot==20.7
+telethon==1.36.0
+qrcode==7.4.2
+Pillow==10.1.0
