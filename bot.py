@@ -39,7 +39,7 @@ DB_PATH        = "numberstore001982.db"
 IST            = timezone(timedelta(hours=5, minutes=30))
 
 # Gmail credentials for auto-approval
-GMAIL_USER     = "raunitkumar321@gmail.com"
+GMAIL_USER     = "rounitk213@gmail.com"
 GMAIL_APP_PASS = "sbuy qolm gkmy hxxd"
 FAMAPP_EMAILS  = ["no-reply@famapp.in"]
 
