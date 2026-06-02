@@ -2718,7 +2718,7 @@ async def help_cb(update, context):
         "5️⃣ Reveal number & get OTP\n━━━━━━━━━━━━━━━━━━━━",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("💬 Support", url="https://t.me/support", style="primary")],
+            [InlineKeyboardButton("💬 Support", url="https://t.me/+efztCDwyatE5NDcy", style="primary")],
             [InlineKeyboardButton("🔙 Main Menu", callback_data="main_menu", style="primary")],
         ]))
 
