@@ -28,10 +28,10 @@ from telethon.sessions import StringSession
 from telethon.errors import FloodWaitError, SessionPasswordNeededError
 
 # ─── CONFIG ──────────────────────────────────────────────────────────────────
-BOT_TOKEN      = "8663089754:AAGhkc-WhuKhu0mYblOced77OkaUrfcq3QE"
-ADMIN_IDS      = [5286579067,6740955542]
-ADMIN_GROUP_ID = -1003837647645
-LOG_CHANNEL_ID = -1003916799207
+BOT_TOKEN      = "8411306292:AAHAEH0x3bpfquvcP5bQmcYOp2rlt3oXmxQ"
+ADMIN_IDS      = [5286579067,6740955542,8137943198]
+ADMIN_GROUP_ID = -1003911602302
+LOG_CHANNEL_ID = -1003916799207,-1003892758494
 API_ID         = 30191201
 API_HASH       = "5c87a8808e935cc3d97958d0bb24ff1f"
 UPI_ID         = "rohan242009@fam"
@@ -45,8 +45,8 @@ FAMAPP_EMAILS  = ["no-reply@famapp.in"]
 
 OXAPAY_MERCHANT_KEY = "R7GWJN-NPCMVX-H3QYHQ-FL2DJA"
 OXAPAY_API_BASE     = "https://api.oxapay.com"
-STORE_TAG           = "@IamVillainStoreBot"
-STORE_LINK          = "http://t.me/IamVillainStoreBot"
+STORE_TAG           = "@xtrotp_bot"
+STORE_LINK          = "https://t.me/xtrotp_bot"
 SERVER_NUM          = 1
 REFERRAL_COMMISSION = 0.01  # 1%
 
