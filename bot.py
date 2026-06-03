@@ -3547,7 +3547,12 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
 
     logger.info("✅ Bot started with 2FA support, no user mention in logs, and group DM instruction!")
-    app.run_polling(drop_pending_updates=True)
+    import asyncio
+
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
+
+app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
