@@ -95,6 +95,7 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         category_id INTEGER, category_name TEXT,
         phone_number TEXT, session_string TEXT,
+        twofa_password TEXT,
         is_sold INTEGER DEFAULT 0, sold_to INTEGER, sold_at TIMESTAMP,
         added_by INTEGER, added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
@@ -128,21 +129,24 @@ def init_db():
     );
     """)
     
-    # ═══ MIGRATION: Add new columns if they don't exist (no data loss) ═══
+    # ═══ MIGRATION: Add new columns if they don't exist ═══
+    try:
+        c.execute("ALTER TABLE accounts ADD COLUMN twofa_password TEXT")
+        logger.info("✅ Added twofa_password column to accounts")
+    except sqlite3.OperationalError:
+        pass
     
-    # orders table - add transaction_id column if missing
     try:
         c.execute("ALTER TABLE orders ADD COLUMN transaction_id TEXT")
         logger.info("✅ Added transaction_id column to orders")
     except sqlite3.OperationalError:
-        pass  # Column already exists
+        pass
     
-    # deposits table - add transaction_id column if missing
     try:
         c.execute("ALTER TABLE deposits ADD COLUMN transaction_id TEXT")
         logger.info("✅ Added transaction_id column to deposits")
     except sqlite3.OperationalError:
-        pass  # Column already exists
+        pass
     
     # Create orders table if not exists
     c.execute("""
@@ -177,7 +181,6 @@ def init_db():
     """)
     
     # Drop old used_utrs table and recreate with new schema
-    # First, backup old data if table exists
     old_utrs_data = []
     try:
         old_rows = c.execute("SELECT utr_number, used_by, used_at FROM used_utrs").fetchall()
@@ -185,9 +188,8 @@ def init_db():
             old_utrs_data.append((row["utr_number"], row["used_by"], row["used_at"]))
         logger.info(f"📦 Backed up {len(old_utrs_data)} old UTR records")
     except sqlite3.OperationalError:
-        pass  # Old table doesn't exist or has different schema
+        pass
     
-    # Drop and recreate used_utrs with new schema
     c.execute("DROP TABLE IF EXISTS used_utrs")
     c.execute("""
     CREATE TABLE used_utrs (
@@ -201,7 +203,6 @@ def init_db():
     c.execute("CREATE INDEX IF NOT EXISTS idx_used_utrs_utr ON used_utrs(utr_number)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_used_utrs_txn ON used_utrs(transaction_id)")
     
-    # Restore old UTR data (transaction_id will be NULL for old records)
     for utr, used_by, used_at in old_utrs_data:
         try:
             c.execute(
@@ -223,7 +224,7 @@ def init_db():
     
     conn.commit()
     conn.close()
-    logger.info("✅ Database initialization complete (no data loss)")
+    logger.info("✅ Database initialization complete (2FA column added)")
 
 
 # ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -705,8 +706,23 @@ async def verify_sub(update, context):
         await query.edit_message_text(msg, reply_markup=main_menu_kb())
 
 
-# ─── /start ──────────────────────────────────────────────────────────────────
+# ─── /start (modified for groups) ────────────────────────────────────────────
 async def start(update, context):
+    # Group handling: only show DM instruction
+    if update.effective_chat.type in ['group', 'supergroup']:
+        bot_username = (await context.bot.get_me()).username
+        dm_link = f"https://t.me/{bot_username}?start=group"
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📩 Start in Private Chat", url=dm_link)]
+        ])
+        await update.message.reply_text(
+            "🤖 *This bot works in private chat only.*\n"
+            "Please click the button below to start me in your DM.",
+            parse_mode="Markdown",
+            reply_markup=keyboard
+        )
+        return
+
     if await guard(update, context):
         return
     msg_text = get_setting("welcome_message", "🏪 Welcome to NumberStore!")
@@ -766,17 +782,16 @@ async def removechannel_cmd(update, context):
     await update.message.reply_text("✅ Channel removed.")
 
 
-# ─── LOG CHANNEL ─────────────────────────────────────────────────────────────
+# ─── LOG CHANNEL (no user mention, only bot tag) ────────────────────────────
 async def send_purchase_log(bot, category_name, price_inr, phone_number, username, user_id):
     ph = str(phone_number)
     masked = f"+{ph[:4]}{'•' * max(0, len(ph)-4)}"
-    user_tag = f"@{username}" if username else f"ID:{user_id}"
     text = (
         f"✅ New Number Purchase Successful\n"
         f"➖ Category: {category_name} | ₹{price_inr:.0f}\n"
         f"➕ Number: {masked} 📞\n"
         f"➕ Server: ({SERVER_NUM}) 🥂\n"
-        f"• {user_tag} || {STORE_TAG}"
+        f"• {STORE_TAG} || {STORE_TAG}"
     )
     kb = InlineKeyboardMarkup([[InlineKeyboardButton("🛒 Buy Now", url=STORE_LINK, style="primary")]])
     try:
@@ -1393,6 +1408,9 @@ async def check_crypto_order_cb(update, context):
 
 # ─── SCREENSHOT HANDLER (UPDATED WITH UTR+TXN FLOW) ─────────────────────────
 async def screenshot_handler(update, context):
+    # Ignore in groups
+    if update.effective_chat.type in ['group', 'supergroup']:
+        return
     if await guard(update, context):
         return
     user = update.effective_user
@@ -1507,7 +1525,7 @@ async def cancel_utr_cb(update, context):
     await query.edit_message_text("❌ Order cancelled.", reply_markup=main_menu_kb())
 
 
-# ─── REVEAL NUMBER ────────────────────────────────────────────────────────────
+# ─── REVEAL NUMBER (updated with 2FA password display and disclaimer) ────────
 async def reveal_number(update, context):
     query = update.callback_query
     await query.answer()
@@ -1526,13 +1544,24 @@ async def reveal_number(update, context):
     if not acc:
         await query.edit_message_text("❌ Account data not found.")
         return
+    
+    # Build message with phone, 2FA password (if exists), and disclaimer
     text = (
         f"📱 *Your Number Details*\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"📂 Category: {mesc(order['category_name'])}\n"
         f"📞 Number: `+{acc['phone_number']}`\n"
+    )
+    if acc["twofa_password"]:
+        text += f"🔐 2‑Step Password: `{acc['twofa_password']}`\n"
+    text += (
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"⚠️ *USER TELEGRAPH FOR LOGIN*\n"
+        f"🚫 *NO REFUND AFTER PURCHASE*\n"
+        f"🚫 *NO REFUND ON FREEZE/BAN*\n"
         f"━━━━━━━━━━━━━━━━━━━━"
     )
+    
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("📨 Get Latest OTP",     callback_data=f"getotp_{acc['id']}", style="primary")],
         [InlineKeyboardButton("🔒 Logout Bot Session", callback_data=f"logout_prompt_{acc['id']}", style="danger")],
@@ -1541,7 +1570,7 @@ async def reveal_number(update, context):
     await query.edit_message_text(text, parse_mode="Markdown", reply_markup=kb)
 
 
-# ─── GET OTP ─────────────────────────────────────────────────────────────────
+# ─── GET OTP (updated to show 2FA password) ──────────────────────────────────
 async def get_otp(update, context):
     query = update.callback_query
     await query.answer("⏳ Fetching OTP...")
@@ -1580,12 +1609,18 @@ async def get_otp(update, context):
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back",
                 callback_data=f"reveal_{_get_order_for_acc(acc_id)}", style="primary")]]))
         return
+    
     text = (
         f"🔑 *Latest OTP:* `{otp_code or 'Not found'}`\n"
         f"📞 `+{acc['phone_number']}`\n"
+    )
+    if acc["twofa_password"]:
+        text += f"🔐 2‑Step Password: `{acc['twofa_password']}`\n"
+    text += (
         f"⏱ {now_ist().strftime('%H:%M:%S IST')}\n\n"
         f"**✨ Thanks For Purchasing From Us ✔**"
     )
+    
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("🔄 Refresh OTP",        callback_data=f"getotp_{acc_id}", style="primary")],
         [InlineKeyboardButton("🔒 Logout Bot Session", callback_data=f"logout_prompt_{acc_id}", style="danger")],
@@ -1624,13 +1659,23 @@ async def getotp_back(update, context):
     if not order or not acc:
         await query.edit_message_text("❌ Order not found.")
         return
+    
     text = (
         f"📱 *Your Number Details*\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"📂 Category: {mesc(order['category_name'])}\n"
         f"📞 Number: `+{acc['phone_number']}`\n"
+    )
+    if acc["twofa_password"]:
+        text += f"🔐 2‑Step Password: `{acc['twofa_password']}`\n"
+    text += (
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"⚠️ *USER TELEGRAPH FOR LOGIN*\n"
+        f"🚫 *NO REFUND AFTER PURCHASE*\n"
+        f"🚫 *NO REFUND ON FREEZE/BAN*\n"
         f"━━━━━━━━━━━━━━━━━━━━"
     )
+    
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("📨 Get Latest OTP",     callback_data=f"getotp_{acc['id']}", style="primary")],
         [InlineKeyboardButton("🔒 Logout Bot Session", callback_data=f"logout_prompt_{acc['id']}", style="danger")],
@@ -1768,8 +1813,11 @@ async def check_dep_cb(update, context):
     await query.answer(f"Status: {label}", show_alert=True)
 
 
-# ─── TEXT HANDLER (UPDATED WITH DUAL UTR+TXN LOGIC) ─────────────────────────
+# ─── TEXT HANDLER (UPDATED WITH 2FA FLOW FOR ADMIN AND GROUP IGNORE) ─────────
 async def text_handler(update, context):
+    # Ignore all text messages in groups (except /start, but that is already handled)
+    if update.effective_chat.type in ['group', 'supergroup']:
+        return
     if await guard(update, context):
         return
     user = update.effective_user
@@ -1885,6 +1933,48 @@ async def text_handler(update, context):
                 )
             except:
                 pass
+        return
+
+    # ── 2FA PASSWORD INPUT DURING ADMIN LOGIN ──
+    if context.user_data.get("new_cat_step") == "login_await_password":
+        password = update.message.text.strip()
+        client = context.user_data.get("login_client")
+        if not client:
+            await update.message.reply_text("❌ Session expired. Please start over.")
+            context.user_data.clear()
+            return
+        try:
+            await client.sign_in(password=password)
+            session_str = client.session.save()
+            context.user_data["current_session"] = session_str
+            await client.disconnect()
+            context.user_data.pop("login_client", None)
+            context.user_data.pop("login_phone", None)
+            context.user_data.pop("login_phone_code_hash", None)
+            # Ask for 2FA password to store for buyer
+            context.user_data["new_cat_step"] = "login_await_twofa_store"
+            await update.message.reply_text(
+                "✅ Login successful!\n\n"
+                "Now enter the *2‑step verification password* for this account (if any).\n"
+                "This password will be shown to the buyer.\n"
+                "Send `skip` if you don't want to store it:",
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            await update.message.reply_text(f"❌ 2FA login failed: {e}")
+            await client.disconnect()
+            context.user_data.pop("login_client", None)
+            context.user_data["new_cat_step"] = "phone"
+        return
+
+    # ── STORE 2FA PASSWORD (or skip) ──
+    if context.user_data.get("new_cat_step") == "login_await_twofa_store":
+        twofa = update.message.text.strip()
+        if twofa.lower() == "skip":
+            twofa = None
+        context.user_data["current_twofa"] = twofa
+        # Continue to saving account
+        await _save_account_and_continue(update, context, twofa)
         return
 
     # Check for redeem code input
@@ -2033,7 +2123,7 @@ async def text_handler(update, context):
         conn.close()
 
         for key in ["new_cat_id", "new_cat_name", "new_cat_step", "new_cat_quantity", "new_cat_added",
-                    "current_phone", "current_session", "login_client", "zip_mode"]:
+                    "current_phone", "current_session", "zip_mode", "current_twofa"]:
             context.user_data.pop(key, None)
 
         rate = get_usdt_rate()
@@ -2123,7 +2213,7 @@ async def text_handler(update, context):
             context.user_data["new_cat_step"] = "phone"
         return
 
-    # ── Admin: OTP verification ──
+    # ── Admin: OTP verification (handles 2FA detection) ──
     if context.user_data.get("new_cat_step") == "login_await_otp":
         client = context.user_data.get("login_client")
         phone = context.user_data.get("login_phone")
@@ -2144,13 +2234,23 @@ async def text_handler(update, context):
             context.user_data.pop("login_client", None)
             context.user_data.pop("login_phone", None)
             context.user_data.pop("login_phone_code_hash", None)
-            
-            await _save_account_and_continue(update, context)
+            # No 2FA -> ask if admin wants to store 2FA password
+            context.user_data["new_cat_step"] = "login_await_twofa_store"
+            await update.message.reply_text(
+                "✅ Login successful!\n\n"
+                "Now enter the *2‑step verification password* for this account (if any).\n"
+                "This password will be shown to the buyer.\n"
+                "Send `skip` if you don't want to store it:",
+                parse_mode="Markdown"
+            )
         except SessionPasswordNeededError:
-            await update.message.reply_text("❌ 2FA is enabled on this account. This is not supported.")
-            await client.disconnect()
-            context.user_data.pop("login_client", None)
-            context.user_data["new_cat_step"] = "phone"
+            # 2FA is enabled, ask for password
+            context.user_data["new_cat_step"] = "login_await_password"
+            await update.message.reply_text(
+                "🔐 This account has 2‑step verification enabled.\n"
+                "Please enter the 2FA password:",
+                parse_mode="Markdown"
+            )
         except Exception as e:
             await update.message.reply_text(f"❌ Login failed: {e}")
             await client.disconnect()
@@ -2221,8 +2321,12 @@ async def text_handler(update, context):
         return
 
 
-# ─── ZIP FILE UPLOAD HANDLER ──────────────────────────────────────────────────
+# ─── ZIP FILE UPLOAD HANDLER (unchanged, no 2FA password store) ──────────────
 async def document_handler(update, context):
+    # Only allow in groups if admin (for convenience), but we ignore normal group messages
+    if update.effective_chat.type in ['group', 'supergroup']:
+        if not is_admin(update.effective_user.id):
+            return
     if await guard(update, context):
         return
     
@@ -2301,9 +2405,10 @@ async def document_handler(update, context):
                     
                     if phone_number:
                         conn = get_db()
+                        # For ZIP we cannot obtain 2FA password, set to NULL
                         conn.execute(
-                            "INSERT INTO accounts (category_id, category_name, phone_number, session_string, added_by, added_at) VALUES (?, ?, ?, ?, ?, ?)",
-                            (cat_id, cat_name, phone_number, session_string, user.id, now_ist().isoformat())
+                            "INSERT INTO accounts (category_id, category_name, phone_number, session_string, twofa_password, added_by, added_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                            (cat_id, cat_name, phone_number, session_string, None, user.id, now_ist().isoformat())
                         )
                         conn.commit()
                         conn.close()
@@ -2385,7 +2490,7 @@ async def mode_zip_cb(update, context):
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="admin_stock", style="danger")]]))
 
 
-async def _save_account_and_continue(update, context):
+async def _save_account_and_continue(update, context, twofa_password=None):
     cat_id  = context.user_data.get("new_cat_id")
     if not cat_id:
         if update.callback_query:
@@ -2396,6 +2501,10 @@ async def _save_account_and_continue(update, context):
 
     phone   = context.user_data.pop("current_phone", None)
     session = context.user_data.pop("current_session", None)
+    if twofa_password is None:
+        twofa = context.user_data.pop("current_twofa", None)
+    else:
+        twofa = twofa_password
 
     if not phone or not session:
         if update.callback_query:
@@ -2416,8 +2525,8 @@ async def _save_account_and_continue(update, context):
         return
 
     conn.execute(
-        "INSERT INTO accounts (category_id,category_name,phone_number,session_string,added_by,added_at) VALUES (?,?,?,?,?,?)",
-        (cat_id, cat["name"], phone, session, update.effective_user.id, now_ist().isoformat())
+        "INSERT INTO accounts (category_id,category_name,phone_number,session_string,twofa_password,added_by,added_at) VALUES (?,?,?,?,?,?,?)",
+        (cat_id, cat["name"], phone, session, twofa, update.effective_user.id, now_ist().isoformat())
     )
     conn.commit()
     conn.close()
@@ -2718,7 +2827,7 @@ async def help_cb(update, context):
         "5️⃣ Reveal number & get OTP\n━━━━━━━━━━━━━━━━━━━━",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("💬 Support", url="https://t.me/+efztCDwyatE5NDcy", style="primary")],
+            [InlineKeyboardButton("💬 Support", url="https://t.me/support", style="primary")],
             [InlineKeyboardButton("🔙 Main Menu", callback_data="main_menu", style="primary")],
         ]))
 
@@ -2868,7 +2977,7 @@ async def add_stock_start(update, context):
     if not is_admin(query.from_user.id):
         return
     for k in ["new_cat_id","new_cat_name","new_cat_step","new_cat_quantity","new_cat_added",
-              "current_phone","current_session","zip_mode"]:
+              "current_phone","current_session","zip_mode", "current_twofa"]:
         context.user_data.pop(k, None)
     context.user_data["awaiting_new_category"] = True
     await query.edit_message_text(
@@ -3437,7 +3546,7 @@ def main():
     app.add_handler(MessageHandler(filters.Document.ALL,            document_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
 
-    logger.info("✅ Bot started with Dual UTR+TXN Auto-Approval System!")
+    logger.info("✅ Bot started with 2FA support, no user mention in logs, and group DM instruction!")
     app.run_polling(drop_pending_updates=True)
 
 
