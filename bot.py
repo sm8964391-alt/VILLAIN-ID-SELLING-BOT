@@ -34,7 +34,7 @@ ADMIN_GROUP_ID = -1003911602302
 LOG_CHANNEL_ID = -1003916799207,-1003892758494
 API_ID         = 30191201
 API_HASH       = "5c87a8808e935cc3d97958d0bb24ff1f"
-UPI_ID         = "rohan242009@fam"
+UPI_ID         = "krishstore@fam"
 DB_PATH        = "numberstore001982.db"
 IST            = timezone(timedelta(hours=5, minutes=30))
 
