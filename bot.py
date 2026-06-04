@@ -31,7 +31,7 @@ from telethon.errors import FloodWaitError, SessionPasswordNeededError
 BOT_TOKEN      = "8411306292:AAHAEH0x3bpfquvcP5bQmcYOp2rlt3oXmxQ"
 ADMIN_IDS      = [5286579067,6740955542,8137943198]
 ADMIN_GROUP_ID = -1003911602302
-LOG_CHANNEL_ID = -1003916799207,-1003892758494
+LOG_CHANNEL_ID = -1003892758494
 API_ID         = 30191201
 API_HASH       = "5c87a8808e935cc3d97958d0bb24ff1f"
 UPI_ID         = "krishstore@fam"
