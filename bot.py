@@ -28,25 +28,25 @@ from telethon.sessions import StringSession
 from telethon.errors import FloodWaitError, SessionPasswordNeededError
 
 # ─── CONFIG ──────────────────────────────────────────────────────────────────
-BOT_TOKEN      = "8411306292:AAHAEH0x3bpfquvcP5bQmcYOp2rlt3oXmxQ"
-ADMIN_IDS      = [5286579067,6740955542,8137943198]
-ADMIN_GROUP_ID = -1003911602302
-LOG_CHANNEL_ID = -1003892758494
+BOT_TOKEN      = "8663089754:AAGhkc-WhuKhu0mYblOced77OkaUrfcq3QE"
+ADMIN_IDS      = [5286579067,8145295522]
+ADMIN_GROUP_ID = -1003776377258
+LOG_CHANNEL_ID = -1003916799207
 API_ID         = 30191201
 API_HASH       = "5c87a8808e935cc3d97958d0bb24ff1f"
-UPI_ID         = "archit30@fam"
+UPI_ID         = "Linuxkali096@pingpay"
 DB_PATH        = "numberstore001982.db"
 IST            = timezone(timedelta(hours=5, minutes=30))
 
 # Gmail credentials for auto-approval
-GMAIL_USER     = "ashishchoudharyrj21@gmail.com"
-GMAIL_APP_PASS = "nsbh dkqi jqil wwuw"
+GMAIL_USER     = ""
+GMAIL_APP_PASS = ""
 FAMAPP_EMAILS  = ["no-reply@famapp.in"]
 
 OXAPAY_MERCHANT_KEY = "R7GWJN-NPCMVX-H3QYHQ-FL2DJA"
 OXAPAY_API_BASE     = "https://api.oxapay.com"
-STORE_TAG           = "@xtrotp_bot"
-STORE_LINK          = "https://t.me/xtrotp_bot"
+STORE_TAG           = "@IamVillainStoreBot"
+STORE_LINK          = "https://t.me/IamVillainStoreBot"
 SERVER_NUM          = 1
 REFERRAL_COMMISSION = 0.01  # 1%
 
